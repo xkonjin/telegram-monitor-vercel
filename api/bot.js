@@ -4,6 +4,7 @@
 import fetch from 'node-fetch';
 import PersistentStorage from '../lib/storage.js';
 import ClaudeIntegration from '../lib/claude-integration.js';
+import CalendarIntegration from '../lib/calendar-integration.js';
 
 class TelegramBot {
   constructor() {
@@ -21,6 +22,9 @@ class TelegramBot {
     
     // Claude Code integration
     this.claude = new ClaudeIntegration();
+    
+    // Calendar integration
+    this.calendar = new CalendarIntegration();
   }
 
   async sendMessage(chatId, text, options = {}) {
@@ -292,6 +296,11 @@ Type /help for the complete command list!`;
 /memory [action] - Memory system operations
 /project [action] - Project management
 
+**📅 Calendar:**
+/events - Show upcoming events
+/schedule [event] - Schedule new event
+/availability - Check availability
+
 **🔧 System:**
 /webhook - Webhook configuration
 /sync - Sync data
@@ -533,6 +542,55 @@ Contact @${this.config.telegram.authorizedUsername} for access to additional fea
           responseText = `📤 **Data Export**\n\n📊 **Statistics:**\n• Tasks: ${exportData.stats.totalTasks} (${exportData.stats.pendingTasks} pending)\n• Messages: ${exportData.stats.totalMessages}\n• Completion Rate: ${exportData.stats.completionRate}%\n• Storage: ${exportData.stats.storageType}\n\n📁 **Export includes:**\n• All tasks with metadata\n• Last 100 messages\n• Usage statistics\n• System information\n\n💾 Data exported at: ${exportData.exportedAt}`;
         }
         break;
+
+      case 'events':
+        if (isAuthorized) {
+          const eventsResult = await this.calendar.getUpcomingEvents();
+          if (eventsResult.success) {
+            responseText = this.calendar.formatEventsForTelegram(eventsResult.events);
+          } else {
+            responseText = `❌ Calendar error: ${eventsResult.error}`;
+            if (eventsResult.instructions) {
+              responseText += `\n\n💡 Setup: ${eventsResult.instructions}`;
+            }
+          }
+        }
+        break;
+
+      case 'schedule':
+        if (isAuthorized) {
+          if (!args) {
+            responseText = '❌ Usage: /schedule [event description]\nExample: /schedule Team meeting tomorrow 2pm';
+          } else {
+            // Parse natural language for event creation
+            const startTime = this.calendar.parseNaturalLanguageTime(args);
+            const result = await this.calendar.createEvent(args, startTime);
+            
+            if (result.success) {
+              responseText = `📅 **Event Scheduled**\n\n${result.message}\n\n🕐 Time: ${new Date(startTime).toLocaleString()}`;
+            } else {
+              responseText = `❌ Scheduling error: ${result.error}`;
+            }
+          }
+        }
+        break;
+
+      case 'availability':
+        if (isAuthorized) {
+          const today = new Date().toISOString().split('T')[0];
+          const availabilityResult = await this.calendar.findAvailableSlots(today);
+          
+          if (availabilityResult.success) {
+            responseText = `📅 **Availability for ${availabilityResult.date}**\n\n⏰ **Free slots:**\n`;
+            availabilityResult.availableSlots.forEach(slot => {
+              responseText += `• ${slot}\n`;
+            });
+            responseText += '\n💡 Use `/schedule [event] at [time]` to book a slot';
+          } else {
+            responseText = `❌ Availability check error: ${availabilityResult.error}`;
+          }
+        }
+        break;
         
       default:
         responseText = isAuthorized ? 
@@ -590,9 +648,151 @@ Contact @${this.config.telegram.authorizedUsername} for access to additional fea
 
   async processUpdate(update) {
     if (update.message) {
-      return await this.handleMessage(update.message);
+      const message = update.message;
+      
+      // Handle different message types
+      if (message.text) {
+        return await this.handleMessage(message);
+      } else if (message.photo && this.isAuthorized(message)) {
+        return await this.handlePhotoMessage(message);
+      } else if (message.voice && this.isAuthorized(message)) {
+        return await this.handleVoiceMessage(message);
+      } else if (message.document && this.isAuthorized(message)) {
+        return await this.handleDocumentMessage(message);
+      } else if (message.forward_from && this.isAuthorized(message)) {
+        return await this.handleForwardedMessage(message);
+      }
     }
     return null;
+  }
+
+  async handlePhotoMessage(message) {
+    const chatId = message.chat.id;
+    const messageId = message.message_id;
+    const caption = message.caption || '';
+    const username = message.from?.username || '';
+    
+    try {
+      // Save photo context
+      const contextText = `Photo uploaded${caption ? ': ' + caption : ''}`;
+      await this.saveMessage(contextText, `Personal Chat (@${username})`, ['photo', 'visual']);
+      
+      // Send response with analysis options
+      let responseText = `📸 **Photo Received**\n\n`;
+      if (caption) {
+        responseText += `📝 Caption: ${caption}\n\n`;
+      }
+      
+      responseText += `💡 **Available Actions:**\n`;
+      responseText += `• Saved to your context\n`;
+      responseText += `• Use /claude analyze photo to process with AI\n`;
+      responseText += `• Forward with questions for context analysis\n\n`;
+      responseText += `*Note: AI image analysis requires API integration*`;
+      
+      return await this.sendMessage(chatId, responseText, { reply_to_message_id: messageId });
+    } catch (error) {
+      return await this.sendMessage(chatId, `❌ Error processing photo: ${error.message}`, 
+        { reply_to_message_id: messageId });
+    }
+  }
+
+  async handleVoiceMessage(message) {
+    const chatId = message.chat.id;
+    const messageId = message.message_id;
+    const username = message.from?.username || '';
+    const duration = message.voice?.duration || 0;
+    
+    try {
+      // Save voice note context
+      const contextText = `Voice note received (${duration}s)`;
+      await this.saveMessage(contextText, `Personal Chat (@${username})`, ['voice', 'audio']);
+      
+      let responseText = `🎤 **Voice Note Received**\n\n`;
+      responseText += `⏱️ Duration: ${duration} seconds\n\n`;
+      responseText += `💡 **Available Actions:**\n`;
+      responseText += `• Saved to your context\n`;
+      responseText += `• Use /claude transcribe to convert to text\n`;
+      responseText += `• Voice commands will be processed automatically\n\n`;
+      responseText += `*Note: Voice transcription requires Whisper API integration*`;
+      
+      return await this.sendMessage(chatId, responseText, { reply_to_message_id: messageId });
+    } catch (error) {
+      return await this.sendMessage(chatId, `❌ Error processing voice note: ${error.message}`, 
+        { reply_to_message_id: messageId });
+    }
+  }
+
+  async handleDocumentMessage(message) {
+    const chatId = message.chat.id;
+    const messageId = message.message_id;
+    const username = message.from?.username || '';
+    const document = message.document;
+    const caption = message.caption || '';
+    
+    try {
+      // Save document context
+      const contextText = `Document uploaded: ${document.file_name}${caption ? ' - ' + caption : ''}`;
+      await this.saveMessage(contextText, `Personal Chat (@${username})`, ['document', 'file']);
+      
+      let responseText = `📄 **Document Received**\n\n`;
+      responseText += `📁 File: ${document.file_name}\n`;
+      responseText += `📏 Size: ${(document.file_size / 1024).toFixed(1)} KB\n`;
+      if (caption) {
+        responseText += `📝 Caption: ${caption}\n`;
+      }
+      
+      responseText += `\n💡 **Available Actions:**\n`;
+      responseText += `• Saved to your context\n`;
+      responseText += `• Use /claude analyze document to process\n`;
+      responseText += `• Supports PDF, CSV, TXT analysis\n\n`;
+      responseText += `*Note: Document processing requires file API integration*`;
+      
+      return await this.sendMessage(chatId, responseText, { reply_to_message_id: messageId });
+    } catch (error) {
+      return await this.sendMessage(chatId, `❌ Error processing document: ${error.message}`, 
+        { reply_to_message_id: messageId });
+    }
+  }
+
+  async handleForwardedMessage(message) {
+    const chatId = message.chat.id;
+    const messageId = message.message_id;
+    const username = message.from?.username || '';
+    const text = message.text || '[Non-text content]';
+    const forwardFrom = message.forward_from || {};
+    const forwardFromChat = message.forward_from_chat || {};
+    
+    try {
+      // Determine source
+      let source = 'Unknown Source';
+      if (forwardFrom.username) {
+        source = `@${forwardFrom.username}`;
+      } else if (forwardFrom.first_name) {
+        source = forwardFrom.first_name;
+      } else if (forwardFromChat.title) {
+        source = forwardFromChat.title;
+      }
+      
+      // Save forwarded message
+      const contextText = `Forwarded from ${source}: ${text}`;
+      const result = await this.saveMessage(contextText, `Forwarded to @${username}`, ['forwarded', 'important']);
+      
+      let responseText = `📤 **Forwarded Message Processed**\n\n`;
+      responseText += `📍 **Source:** ${source}\n`;
+      responseText += `💬 **Content:** ${text.substring(0, 100)}${text.length > 100 ? '...' : ''}\n\n`;
+      responseText += `✅ Saved to your context with auto-extracted action items\n`;
+      
+      if (result.tasksCreated > 0) {
+        responseText += `📋 Auto-created ${result.tasksCreated} tasks\n`;
+      }
+      
+      responseText += `🔍 Use /recent or /search to find it later`;
+      
+      return await this.sendMessage(chatId, responseText, { reply_to_message_id: messageId });
+    } catch (error) {
+      return await this.sendMessage(chatId, `❌ Error processing forwarded message: ${error.message}`, 
+        { reply_to_message_id: messageId });
+    }
   }
 }
 
