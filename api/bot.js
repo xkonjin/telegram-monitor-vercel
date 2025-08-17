@@ -81,7 +81,21 @@ class TelegramBot {
 
   isAuthorized(message) {
     const username = message?.from?.username?.toLowerCase();
-    return username === this.config.telegram.authorizedUsername.toLowerCase();
+    const authorizedUser = this.config.telegram.authorizedUsername.toLowerCase();
+    
+    // Debug logging
+    console.log('Authorization check:', {
+      messageUsername: username,
+      authorizedUsername: authorizedUser,
+      chatId: message?.chat?.id,
+      fromId: message?.from?.id
+    });
+    
+    // Check both username and chat ID for additional security
+    const isCorrectUser = username === authorizedUser;
+    const isCorrectChat = message?.chat?.id?.toString() === this.config.telegram.chatId;
+    
+    return isCorrectUser || isCorrectChat;
   }
 
   isBasicCommand(text) {
@@ -836,6 +850,10 @@ export default async function handler(req, res) {
     if (req.method === 'POST') {
       // Handle webhook update
       const update = req.body;
+      
+      // Debug logging
+      console.log('Received webhook update:', JSON.stringify(update, null, 2));
+      
       const result = await bot.processUpdate(update);
       
       res.status(200).json({
