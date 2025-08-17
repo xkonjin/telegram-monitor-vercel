@@ -1,0 +1,32 @@
+{
+  "name": "telegram-monitor-vercel",
+  "version": "1.0.0",
+  "description": "24/7 Telegram monitoring system deployed on Vercel",
+  "main": "index.js",
+  "scripts": {
+    "dev": "vercel dev",
+    "build": "echo 'Build complete'",
+    "start": "node index.js",
+    "deploy": "vercel --prod",
+    "test": "node test/monitor.test.js"
+  },
+  "keywords": [
+    "telegram",
+    "monitoring",
+    "vercel",
+    "serverless"
+  ],
+  "author": "Claude Code Master System",
+  "license": "MIT",
+  "dependencies": {
+    "node-fetch": "^3.3.2",
+    "node-cron": "^3.0.3",
+    "@vercel/node": "^3.0.0"
+  },
+  "devDependencies": {
+    "vercel": "^33.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
