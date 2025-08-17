@@ -13,7 +13,7 @@ class TelegramBot {
       telegram: {
         botToken: process.env.TELEGRAM_BOT_TOKEN,
         chatId: process.env.TELEGRAM_CHAT_ID,
-        authorizedUsername: (process.env.AUTHORIZED_USERNAME || 'Xkonjin').trim()
+        authorizedUsername: 'xkonjin'  // Fixed hardcoded to match @xkonjin
       },
       webhookSecret: process.env.WEBHOOK_SECRET || 'your-secret-key-here'
     };
