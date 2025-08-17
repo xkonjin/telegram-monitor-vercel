@@ -12,7 +12,7 @@ class TelegramBot {
       telegram: {
         botToken: process.env.TELEGRAM_BOT_TOKEN,
         chatId: process.env.TELEGRAM_CHAT_ID,
-        authorizedUsername: process.env.AUTHORIZED_USERNAME || 'Xkonjin'
+        authorizedUsername: (process.env.AUTHORIZED_USERNAME || 'Xkonjin').trim()
       },
       webhookSecret: process.env.WEBHOOK_SECRET || 'your-secret-key-here'
     };
@@ -30,25 +30,50 @@ class TelegramBot {
   async sendMessage(chatId, text, options = {}) {
     const url = `https://api.telegram.org/bot${this.config.telegram.botToken}/sendMessage`;
     
+    // Ensure text doesn't exceed Telegram's 4096 character limit
+    const truncatedText = text.length > 4000 ? text.substring(0, 3997) + '...' : text;
+    
     const payload = {
       chat_id: chatId,
-      text: text,
+      text: truncatedText,
       parse_mode: 'Markdown',
       ...options
     };
 
     try {
+      console.log('Sending message to chat:', chatId, 'Length:', truncatedText.length);
+      
       const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
 
+      const responseData = await response.json();
+      
       if (!response.ok) {
-        throw new Error(`Telegram API error: ${response.status}`);
+        console.error('Telegram API error:', response.status, responseData);
+        
+        // Try with plain text if Markdown fails
+        if (responseData.description?.includes('parse')) {
+          const plainPayload = { ...payload, parse_mode: undefined };
+          const retryResponse = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(plainPayload)
+          });
+          
+          if (retryResponse.ok) {
+            console.log('Message sent successfully with plain text fallback');
+            return await retryResponse.json();
+          }
+        }
+        
+        throw new Error(`Telegram API error: ${response.status} - ${responseData.description}`);
       }
 
-      return await response.json();
+      console.log('Message sent successfully');
+      return responseData;
     } catch (error) {
       console.error('Error sending message:', error);
       throw error;
