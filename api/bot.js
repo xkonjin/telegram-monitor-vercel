@@ -2,9 +2,10 @@
 // Handles commands, task management, message storage, and AI integration
 
 import fetch from 'node-fetch';
-import PersistentStorage from '../lib/storage.js';
-import ClaudeIntegration from '../lib/claude-integration.js';
-import CalendarIntegration from '../lib/calendar-integration.js';
+// Temporarily disable complex imports to fix 500 errors
+// import PersistentStorage from '../lib/storage.js';
+// import ClaudeIntegration from '../lib/claude-integration.js';
+// import CalendarIntegration from '../lib/calendar-integration.js';
 
 class TelegramBot {
   constructor() {
@@ -16,11 +17,6 @@ class TelegramBot {
       },
       webhookSecret: process.env.WEBHOOK_SECRET || 'your-secret-key-here'
     };
-    
-    // Temporarily disable complex integrations for debugging
-    // this.storage = new PersistentStorage();
-    // this.claude = new ClaudeIntegration();
-    // this.calendar = new CalendarIntegration();
     
     // Simple in-memory storage for immediate testing
     this.simpleStorage = { tasks: [], messages: [] };
