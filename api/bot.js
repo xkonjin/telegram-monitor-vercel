@@ -2,6 +2,8 @@
 // Handles commands, task management, message storage, and AI integration
 
 import fetch from 'node-fetch';
+import GroupManager from '../lib/group-manager.js';
+import VoiceProcessor from '../lib/voice-processor.js';
 // Temporarily disable complex imports to fix 500 errors
 // import PersistentStorage from '../lib/storage.js';
 // import ClaudeIntegration from '../lib/claude-integration.js';
@@ -20,6 +22,10 @@ class TelegramBot {
     
     // Simple in-memory storage for immediate testing
     this.simpleStorage = { tasks: [], messages: [] };
+    
+    // Group management and voice processing
+    this.groupManager = new GroupManager(this.config.telegram.botToken);
+    this.voiceProcessor = new VoiceProcessor(this.config.telegram.botToken);
   }
 
   async sendMessage(chatId, text, options = {}) {
@@ -335,6 +341,11 @@ Type /help for the complete command list!`;
 /schedule [event] - Schedule new event
 /availability - Check availability
 
+**👥 Group Management:**
+/setuphq - Setup Jinbot Test HQ topics
+/notify [topic] [message] - Send notification to topic
+/topics - List available topics
+
 **🔧 System:**
 /webhook - Webhook configuration
 /sync - Sync data
@@ -623,6 +634,62 @@ Contact @${this.config.telegram.authorizedUsername} for access to additional fea
           }
         }
         break;
+
+      case 'setuphq':
+        if (isAuthorized) {
+          const groupId = args || process.env.JINBOT_HQ_GROUP_ID;
+          if (!groupId) {
+            responseText = '❌ Usage: /setuphq [group_id]\n\nOr set JINBOT_HQ_GROUP_ID environment variable\n\n💡 To get group ID:\n1. Add bot to group\n2. Send a message\n3. Check logs for chat ID';
+          } else {
+            const setupResult = await this.groupManager.setupJinbotHQ(groupId);
+            if (setupResult.success) {
+              responseText = `✅ **Jinbot Test HQ Setup Complete**\n\n📊 **Topics Created**: ${setupResult.topicsCreated}\n\n🎯 **Available Topics:**\n• General Claude\n• Development\n• Content & Strategy\n• System Monitoring\n• AI Research\n• Decision Center\n• Automation Hub\n\n🔗 Group ready for Claude Code notifications!`;
+            } else {
+              responseText = `❌ Setup failed: ${setupResult.error}`;
+            }
+          }
+        }
+        break;
+
+      case 'topics':
+        if (isAuthorized) {
+          const topics = Object.entries(this.groupManager.claudeTopics);
+          responseText = '🎯 **Available Topics for Notifications:**\n\n';
+          topics.forEach(([key, topic]) => {
+            responseText += `• **${key}**: ${topic.name}\n  ${topic.description}\n\n`;
+          });
+          responseText += '💡 Use `/notify [topic] [message]` to send notifications';
+        }
+        break;
+
+      case 'notify':
+        if (isAuthorized) {
+          const parts = args.split(' ');
+          const topicKey = parts[0];
+          const message = parts.slice(1).join(' ');
+          
+          if (!topicKey || !message) {
+            responseText = '❌ Usage: /notify [topic] [message]\nExample: /notify development "Code review needed"\n\nUse /topics to see available topics';
+          } else {
+            const groupId = process.env.JINBOT_HQ_GROUP_ID || this.config.telegram.chatId;
+            const notification = {
+              type: 'manual',
+              message: message,
+              context: `Manual notification from @${message.from?.username || 'user'}`,
+              instance: 'telegram-bot',
+              requiresDecision: message.toLowerCase().includes('decision') || message.toLowerCase().includes('approve')
+            };
+            
+            const result = await this.groupManager.sendClaudeNotification(groupId, topicKey, notification);
+            
+            if (result.success) {
+              responseText = `✅ **Notification Sent**\n\n📍 Topic: ${topicKey}\n💬 Message: ${message}\n🆔 Message ID: ${result.messageId}`;
+            } else {
+              responseText = `❌ Notification failed: ${result.error}`;
+            }
+          }
+        }
+        break;
         
       default:
         responseText = isAuthorized ? 
@@ -733,21 +800,48 @@ Contact @${this.config.telegram.authorizedUsername} for access to additional fea
     const messageId = message.message_id;
     const username = message.from?.username || '';
     const duration = message.voice?.duration || 0;
+    const fileId = message.voice?.file_id;
     
     try {
-      // Save voice note context
-      const contextText = `Voice note received (${duration}s)`;
-      await this.saveMessage(contextText, `Personal Chat (@${username})`, ['voice', 'audio']);
-      
-      let responseText = `🎤 **Voice Note Received**\n\n`;
-      responseText += `⏱️ Duration: ${duration} seconds\n\n`;
-      responseText += `💡 **Available Actions:**\n`;
-      responseText += `• Saved to your context\n`;
-      responseText += `• Use /claude transcribe to convert to text\n`;
-      responseText += `• Voice commands will be processed automatically\n\n`;
-      responseText += `*Note: Voice transcription requires Whisper API integration*`;
-      
-      return await this.sendMessage(chatId, responseText, { reply_to_message_id: messageId });
+      // Send immediate acknowledgment
+      await this.sendMessage(chatId, 
+        `🎤 **Processing Voice Note...**\n\n⏱️ Duration: ${duration}s\n🔄 Transcribing...`,
+        { reply_to_message_id: messageId }
+      );
+
+      // Process voice note
+      const voiceResult = await this.voiceProcessor.processVoiceNote(fileId, {
+        chatId,
+        username,
+        messageId
+      });
+
+      if (voiceResult.success) {
+        let responseText = `🎤 **Voice Note Processed**\n\n`;
+        responseText += `📝 **Transcription**: ${voiceResult.transcription}\n\n`;
+        responseText += `🔧 **Method**: ${voiceResult.transcriptionMethod}\n`;
+        
+        // Show detected commands if any
+        if (voiceResult.processing.commands.length > 0) {
+          responseText += `\n⚡ **Detected Commands**:\n`;
+          voiceResult.processing.commands.forEach((cmd, index) => {
+            responseText += `${index + 1}. ${cmd.type}: ${cmd.params.join(' ')}\n`;
+          });
+          
+          responseText += `\n🎯 **Execute commands?** Reply with ✅ to execute or ❌ to cancel`;
+        }
+        
+        if (voiceResult.processing.suggestions.length > 0) {
+          responseText += `\n\n💡 **Suggestions**:\n${voiceResult.processing.suggestions.join('\n')}`;
+        }
+
+        return await this.sendMessage(chatId, responseText);
+      } else {
+        return await this.sendMessage(chatId, 
+          `❌ **Voice Processing Failed**\n\n${voiceResult.error}\n\n${voiceResult.fallback || ''}`,
+          { reply_to_message_id: messageId }
+        );
+      }
     } catch (error) {
       return await this.sendMessage(chatId, `❌ Error processing voice note: ${error.message}`, 
         { reply_to_message_id: messageId });
