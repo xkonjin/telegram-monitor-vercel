@@ -17,14 +17,13 @@ class TelegramBot {
       webhookSecret: process.env.WEBHOOK_SECRET || 'your-secret-key-here'
     };
     
-    // Persistent storage with Vercel KV
-    this.storage = new PersistentStorage();
+    // Temporarily disable complex integrations for debugging
+    // this.storage = new PersistentStorage();
+    // this.claude = new ClaudeIntegration();
+    // this.calendar = new CalendarIntegration();
     
-    // Claude Code integration
-    this.claude = new ClaudeIntegration();
-    
-    // Calendar integration
-    this.calendar = new CalendarIntegration();
+    // Simple in-memory storage for immediate testing
+    this.simpleStorage = { tasks: [], messages: [] };
   }
 
   async sendMessage(chatId, text, options = {}) {
@@ -353,19 +352,17 @@ Contact @${this.config.telegram.authorizedUsername} for access to additional fea
         
       case 'status':
         if (isAuthorized) {
-          const stats = await this.storage.getStats();
           responseText = `🤖 **Jinbot Cloud Status**
 
 ✅ Bot running on Vercel serverless
 🔒 Security: Active (@${this.config.telegram.authorizedUsername} only)
-📊 Tasks: ${stats.totalTasks} total (${stats.pendingTasks} pending)
-💬 Messages: ${stats.totalMessages} stored
-📈 Completion Rate: ${stats.completionRate}%
-💾 Storage: ${stats.storageType}
+📊 Tasks: ${this.simpleStorage.tasks.length} total
+💬 Messages: ${this.simpleStorage.messages.length} stored
 ☁️ Platform: Vercel serverless functions
 📡 Monitoring: Active with daily checks
+⚡ Response Mode: Instant (Debug)
 
-🌐 Dashboard: ${process.env.VERCEL_URL || 'Not available'}`;
+🌐 Dashboard: https://telegram-monitor.vercel.app`;
         }
         break;
         
