@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "24/7 Telegram monitoring system deployed on Vercel",
   "main": "index.js",
+  "type": "module",
   "scripts": {
     "dev": "vercel dev",
     "build": "echo 'Build complete'",
