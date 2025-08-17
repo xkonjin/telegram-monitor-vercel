@@ -113,4 +113,4 @@ curl https://telegram-monitor.vercel.app/api/bot
 - ✅ **Security**: Authorized user controls
 - ✅ **Dashboard**: Live system status
 
-Perfect for anyone needing reliable 24/7 monitoring with an intelligent Telegram bot assistant, all running serverless without infrastructure management.
+Perfect for anyone needing reliable 24/7 monitoring with an intelligent Telegram bot assistant, all running serverless without infrastructure management.# Force deployment update
