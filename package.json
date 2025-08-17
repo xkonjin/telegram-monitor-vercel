@@ -8,7 +8,9 @@
     "build": "echo 'Build complete'",
     "start": "node index.js",
     "deploy": "vercel --prod",
-    "test": "node test/monitor.test.js"
+    "test": "node test/manual-test.js",
+    "test:local": "node test/manual-test.js http://localhost:3000",
+    "test:prod": "node test/manual-test.js https://your-project.vercel.app"
   },
   "keywords": [
     "telegram",
@@ -21,7 +23,8 @@
   "dependencies": {
     "node-fetch": "^3.3.2",
     "node-cron": "^3.0.3",
-    "@vercel/node": "^3.0.0"
+    "@vercel/node": "^3.0.0",
+    "dotenv": "^16.0.0"
   },
   "devDependencies": {
     "vercel": "^33.0.0"

@@ -234,7 +234,9 @@ export default async function handler(req, res) {
       environment: envStatus,
       endpoints: {
         monitor: '/api/monitor',
-        webhook: '/api/webhook',
+        webhook: '/api/webhook', 
+        bot: '/api/bot',
+        setupWebhook: '/api/setup-webhook',
         status: '/api/status',
         testTelegram: '/api/status?test=telegram'
       },

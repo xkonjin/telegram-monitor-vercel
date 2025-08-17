@@ -1,34 +1,19 @@
 {
-  "version": 2,
-  "name": "telegram-monitor",
-  "description": "24/7 Telegram monitoring system",
-  "builds": [
-    {
-      "src": "api/**/*.js",
-      "use": "@vercel/node"
-    }
-  ],
-  "routes": [
-    {
-      "src": "/api/(.*)",
-      "dest": "/api/$1"
-    }
-  ],
   "functions": {
     "api/monitor.js": {
       "maxDuration": 30
     },
     "api/webhook.js": {
       "maxDuration": 10
+    },
+    "api/status.js": {
+      "maxDuration": 10
     }
   },
   "crons": [
     {
       "path": "/api/monitor",
-      "schedule": "*/5 * * * *"
+      "schedule": "0 9 * * *"
     }
-  ],
-  "env": {
-    "NODE_ENV": "production"
-  }
+  ]
 }

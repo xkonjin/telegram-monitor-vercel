@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Telegram Monitor - 24/7 System Monitoring</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            text-align: center;
+        }
+        .logo {
+            font-size: 3em;
+            margin-bottom: 20px;
+        }
+        .status-card {
+            background: rgba(255,255,255,0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 30px;
+            margin: 20px 0;
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+        .endpoint {
+            background: rgba(255,255,255,0.05);
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .status-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #4ade80;
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        .api-links {
+            margin-top: 30px;
+        }
+        .api-link {
+            display: inline-block;
+            margin: 10px;
+            padding: 12px 24px;
+            background: rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.3);
+            border-radius: 8px;
+            color: white;
+            text-decoration: none;
+            transition: all 0.3s ease;
+        }
+        .api-link:hover {
+            background: rgba(255,255,255,0.2);
+            transform: translateY(-2px);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="logo">📡</div>
+        <h1>Telegram Monitor</h1>
+        <p>24/7 System Monitoring & Alerts</p>
+        
+        <div class="status-card">
+            <h2>System Status</h2>
+            <div id="status-content">
+                <p>Loading system status...</p>
+            </div>
+        </div>
+
+        <div class="api-links">
+            <h3>API Endpoints</h3>
+            <a href="/api/status" class="api-link">📊 System Status</a>
+            <a href="/api/status?test=telegram" class="api-link">📱 Test Telegram</a>
+            <a href="https://github.com/your-username/telegram-monitor-vercel" class="api-link">📖 Documentation</a>
+        </div>
+
+        <div class="status-card">
+            <h3>Features</h3>
+            <div class="endpoint">
+                <span>🔄 Automated Monitoring</span>
+                <div class="status-indicator"></div>
+            </div>
+            <div class="endpoint">
+                <span>📱 Telegram Alerts</span>
+                <div class="status-indicator"></div>
+            </div>
+            <div class="endpoint">
+                <span>🔗 Webhook Integration</span>
+                <div class="status-indicator"></div>
+            </div>
+            <div class="endpoint">
+                <span>☁️ Serverless Deployment</span>
+                <div class="status-indicator"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Load system status
+        fetch('/api/status')
+            .then(response => response.json())
+            .then(data => {
+                const statusContent = document.getElementById('status-content');
+                const operational = data.status?.operational;
+                
+                statusContent.innerHTML = `
+                    <div class="endpoint">
+                        <span>System Operational</span>
+                        <div class="status-indicator" style="background: ${operational ? '#4ade80' : '#ef4444'}"></div>
+                    </div>
+                    <div class="endpoint">
+                        <span>Telegram Integration</span>
+                        <div class="status-indicator" style="background: ${data.telegram?.valid ? '#4ade80' : '#ef4444'}"></div>
+                    </div>
+                    <div class="endpoint">
+                        <span>Endpoints Monitored</span>
+                        <span>${data.system?.monitoring?.endpointsConfigured || 0}</span>
+                    </div>
+                    <div class="endpoint">
+                        <span>Last Updated</span>
+                        <span>${new Date(data.status?.timestamp).toLocaleTimeString()}</span>
+                    </div>
+                `;
+            })
+            .catch(error => {
+                document.getElementById('status-content').innerHTML = 
+                    '<p style="color: #ef4444;">Error loading status</p>';
+            });
+    </script>
+</body>
+</html>
