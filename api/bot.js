@@ -2,6 +2,8 @@
 // Handles commands, task management, message storage, and AI integration
 
 import fetch from 'node-fetch';
+import PersistentStorage from '../lib/storage.js';
+import ClaudeIntegration from '../lib/claude-integration.js';
 
 class TelegramBot {
   constructor() {
@@ -14,12 +16,11 @@ class TelegramBot {
       webhookSecret: process.env.WEBHOOK_SECRET || 'your-secret-key-here'
     };
     
-    // In-memory storage (would use database in production)
-    this.storage = {
-      tasks: [],
-      messages: [],
-      nextTaskId: 1
-    };
+    // Persistent storage with Vercel KV
+    this.storage = new PersistentStorage();
+    
+    // Claude Code integration
+    this.claude = new ClaudeIntegration();
   }
 
   async sendMessage(chatId, text, options = {}) {
@@ -97,93 +98,128 @@ class TelegramBot {
     return tags.slice(0, 5); // Limit to 5 tags
   }
 
-  addTask(description, priority = 'Medium', tags = []) {
+  async addTask(description, priority = 'Medium', tags = []) {
     const task = {
-      id: `task_${String(this.storage.nextTaskId).padStart(3, '0')}`,
       description,
       priority,
       status: 'Pending',
-      createdDate: new Date().toISOString().split('T')[0],
       tags: Array.isArray(tags) ? tags : tags.split(',').map(t => t.trim()),
       source: 'telegram',
       completionDate: ''
     };
     
-    this.storage.tasks.push(task);
-    this.storage.nextTaskId++;
-    
-    return task;
+    return await this.storage.addTask(task);
   }
 
-  completeTask(taskId) {
-    const task = this.storage.tasks.find(t => t.id === taskId);
-    if (task) {
-      task.status = 'Completed';
-      task.completionDate = new Date().toISOString().split('T')[0];
-      return task;
+  async completeTask(taskId) {
+    return await this.storage.completeTask(taskId);
+  }
+
+  async listTasks(status = 'Pending', limit = 10) {
+    if (status === 'Pending') {
+      return await this.storage.getPendingTasks(limit);
     }
-    return null;
-  }
-
-  listTasks(status = 'Pending', limit = 10) {
-    return this.storage.tasks
+    const tasks = await this.storage.getTasks();
+    return tasks
       .filter(task => status === 'All' || task.status === status)
       .slice(0, limit);
   }
 
-  searchTasks(keyword) {
-    const keywordLower = keyword.toLowerCase();
-    return this.storage.tasks.filter(task => 
-      task.description.toLowerCase().includes(keywordLower) ||
-      task.tags.some(tag => tag.toLowerCase().includes(keywordLower))
-    );
+  async searchTasks(keyword) {
+    return await this.storage.searchTasks(keyword);
   }
 
-  saveMessage(text, sourceChat, tags = []) {
+  async saveMessage(text, sourceChat, tags = []) {
     const autoTags = this.autoTagMessage(text, sourceChat);
     const allTags = [...new Set([...autoTags, ...tags])];
     const actionItems = this.extractActionItems(text);
     
     const message = {
-      id: `msg_${String(this.storage.messages.length + 1).padStart(3, '0')}`,
       text,
       sourceChat,
-      timestamp: new Date().toISOString(),
       tags: allTags,
       actionItems,
       contextType: 'saved'
     };
     
-    this.storage.messages.push(message);
+    const savedMessage = await this.storage.addMessage(message);
     
     // Auto-create tasks from action items
     let tasksCreated = 0;
     for (const action of actionItems) {
       if (action.length > 10) {
-        this.addTask(`From ${sourceChat}: ${action}`, 'Medium', ['auto-extracted']);
+        await this.addTask(`From ${sourceChat}: ${action}`, 'Medium', ['auto-extracted']);
         tasksCreated++;
       }
     }
     
-    return { message, tasksCreated };
+    return { message: savedMessage, tasksCreated };
   }
 
-  searchMessages(keyword, limit = 5) {
-    const keywordLower = keyword.toLowerCase();
-    return this.storage.messages
-      .filter(msg => 
-        msg.text.toLowerCase().includes(keywordLower) ||
-        msg.tags.some(tag => tag.toLowerCase().includes(keywordLower)) ||
-        msg.sourceChat.toLowerCase().includes(keywordLower)
-      )
-      .slice(0, limit);
+  async searchMessages(keyword, limit = 5) {
+    return await this.storage.searchMessages(keyword, limit);
   }
 
-  getRecentMessages(hours = 24) {
-    const cutoffTime = new Date(Date.now() - hours * 60 * 60 * 1000);
-    return this.storage.messages
-      .filter(msg => new Date(msg.timestamp) > cutoffTime)
-      .slice(0, 10);
+  async getRecentMessages(hours = 24) {
+    return await this.storage.getRecentMessages(hours);
+  }
+
+  async handleMemoryCommand(args) {
+    const parts = args.split(' ');
+    const action = parts[0];
+    const query = parts.slice(1).join(' ');
+
+    switch (action) {
+      case 'search':
+        if (!query) {
+          return '❌ Usage: /memory search [query]\nExample: /memory search "telegram setup"';
+        }
+        return await this.claude.executeClaudeCommand(`memory search "${query}"`);
+      
+      case 'status':
+        return await this.claude.executeClaudeCommand('memory status');
+      
+      case 'sync':
+        const syncResult = await this.claude.syncWithLocalMemory();
+        return `🔄 **Memory Sync**\n\n${syncResult.success ? 
+          `✅ Synced ${syncResult.synced} operations` : 
+          `❌ Failed: ${syncResult.error}`}\n\n🕐 Timestamp: ${syncResult.timestamp || new Date().toLocaleString()}`;
+      
+      case 'summary':
+        return await this.claude.executeClaudeCommand('memory summary --days 7');
+      
+      default:
+        return '🧠 **Memory Commands:**\n\n• `search [query]` - Search memory\n• `status` - System status\n• `sync` - Sync with master\n• `summary` - Recent activity';
+    }
+  }
+
+  async handleProjectCommand(args) {
+    const parts = args.split(' ');
+    const action = parts[0];
+    const projectName = parts.slice(1).join(' ');
+
+    switch (action) {
+      case 'list':
+        return await this.claude.executeClaudeCommand('project list');
+      
+      case 'status':
+        if (!projectName) {
+          return '❌ Usage: /project status [name]\nExample: /project status plasma';
+        }
+        return await this.claude.executeClaudeCommand(`project status ${projectName}`);
+      
+      case 'switch':
+        if (!projectName) {
+          return '❌ Usage: /project switch [name]\nExample: /project switch plasma';
+        }
+        return await this.claude.executeClaudeCommand(`project switch ${projectName}`);
+      
+      case 'stats':
+        return await this.claude.executeClaudeCommand('project stats');
+      
+      default:
+        return '📁 **Project Commands:**\n\n• `list` - List all projects\n• `status [name]` - Project status\n• `switch [name]` - Switch project\n• `stats` - Project statistics';
+    }
   }
 
   async handleCommand(message) {
@@ -251,6 +287,11 @@ Type /help for the complete command list!`;
 /endpoints - Check monitored endpoints
 /alerts - View recent alerts
 
+**🧠 Claude Code:**
+/claude [command] - Execute Claude Code commands
+/memory [action] - Memory system operations
+/project [action] - Project management
+
 **🔧 System:**
 /webhook - Webhook configuration
 /sync - Sync data
@@ -278,12 +319,15 @@ Contact @${this.config.telegram.authorizedUsername} for access to additional fea
         
       case 'status':
         if (isAuthorized) {
+          const stats = await this.storage.getStats();
           responseText = `🤖 **Jinbot Cloud Status**
 
 ✅ Bot running on Vercel serverless
 🔒 Security: Active (@${this.config.telegram.authorizedUsername} only)
-📊 Tasks: ${this.storage.tasks.length} total (${this.storage.tasks.filter(t => t.status === 'Pending').length} pending)
-💬 Messages: ${this.storage.messages.length} stored
+📊 Tasks: ${stats.totalTasks} total (${stats.pendingTasks} pending)
+💬 Messages: ${stats.totalMessages} stored
+📈 Completion Rate: ${stats.completionRate}%
+💾 Storage: ${stats.storageType}
 ☁️ Platform: Vercel serverless functions
 📡 Monitoring: Active with daily checks
 
@@ -296,7 +340,7 @@ Contact @${this.config.telegram.authorizedUsername} for access to additional fea
           if (!args) {
             responseText = '❌ Usage: /addtask [description]\nExample: /addtask Review quarterly reports';
           } else {
-            const task = this.addTask(args);
+            const task = await this.addTask(args);
             responseText = `✅ Task added successfully!\nID: ${task.id}\nDescription: ${task.description}\nPriority: ${task.priority}`;
           }
         }
@@ -304,7 +348,7 @@ Contact @${this.config.telegram.authorizedUsername} for access to additional fea
         
       case 'tasks':
         if (isAuthorized) {
-          const tasks = this.listTasks();
+          const tasks = await this.listTasks();
           if (tasks.length === 0) {
             responseText = 'No pending tasks found.';
           } else {
@@ -326,7 +370,7 @@ Contact @${this.config.telegram.authorizedUsername} for access to additional fea
           if (!args) {
             responseText = '❌ Usage: /complete [task_id]\nExample: /complete task_001';
           } else {
-            const task = this.completeTask(args.trim());
+            const task = await this.completeTask(args.trim());
             if (task) {
               responseText = `✅ Task ${task.id} marked as completed!\nDescription: ${task.description}`;
             } else {
@@ -341,7 +385,7 @@ Contact @${this.config.telegram.authorizedUsername} for access to additional fea
           if (!args) {
             responseText = '❌ Usage: /save [message]\nExample: /save Important meeting tomorrow';
           } else {
-            const result = this.saveMessage(args, `Chat ${chatId}`);
+            const result = await this.saveMessage(args, `Chat ${chatId}`);
             responseText = `✅ Message saved successfully!\n📁 Source: Chat ${chatId}\n🏷️ Tags: ${result.message.tags.join(', ')}`;
             if (result.tasksCreated > 0) {
               responseText += `\n📋 Auto-created tasks: ${result.tasksCreated}`;
@@ -352,7 +396,7 @@ Contact @${this.config.telegram.authorizedUsername} for access to additional fea
         
       case 'recent':
         if (isAuthorized) {
-          const recentMessages = this.getRecentMessages();
+          const recentMessages = await this.getRecentMessages();
           if (recentMessages.length === 0) {
             responseText = 'No recent messages found in the last 24 hours.';
           } else {
@@ -371,7 +415,7 @@ Contact @${this.config.telegram.authorizedUsername} for access to additional fea
           if (!args) {
             responseText = '❌ Usage: /search [keyword]\nExample: /search meeting';
           } else {
-            const messages = this.searchMessages(args);
+            const messages = await this.searchMessages(args);
             if (messages.length === 0) {
               responseText = `No messages found matching '${args}'`;
             } else {
@@ -405,6 +449,90 @@ Contact @${this.config.telegram.authorizedUsername} for access to additional fea
           }
         }
         break;
+
+      case 'claude':
+        if (isAuthorized) {
+          if (!args) {
+            responseText = '❌ Usage: /claude [command]\nExample: /claude status\nExample: /claude memory search "telegram"';
+          } else {
+            const result = await this.claude.executeClaudeCommand(args);
+            responseText = result;
+          }
+        }
+        break;
+
+      case 'memory':
+        if (isAuthorized) {
+          if (!args) {
+            responseText = '🧠 **Memory Commands:**\n\n• `/memory search [query]` - Search memory\n• `/memory status` - Memory system status\n• `/memory sync` - Sync with master memory\n• `/memory summary` - Recent activity summary';
+          } else {
+            const result = await this.handleMemoryCommand(args);
+            responseText = result;
+          }
+        }
+        break;
+
+      case 'project':
+        if (isAuthorized) {
+          if (!args) {
+            responseText = '📁 **Project Commands:**\n\n• `/project list` - List all projects\n• `/project status [name]` - Project status\n• `/project switch [name]` - Switch active project\n• `/project stats` - Project statistics';
+          } else {
+            const result = await this.handleProjectCommand(args);
+            responseText = result;
+          }
+        }
+        break;
+
+      case 'searchtasks':
+        if (isAuthorized) {
+          if (!args) {
+            responseText = '❌ Usage: /searchtasks [keyword]\nExample: /searchtasks plasma';
+          } else {
+            const tasks = await this.searchTasks(args);
+            if (tasks.length === 0) {
+              responseText = `No tasks found matching '${args}'`;
+            } else {
+              responseText = `🔍 **Tasks matching '${args}':**\n\n`;
+              tasks.forEach(task => {
+                const priorityEmoji = task.priority === 'High' ? '🔴' : task.priority === 'Medium' ? '🟡' : '🟢';
+                const statusEmoji = task.status === 'Completed' ? '✅' : '⏳';
+                responseText += `${statusEmoji} ${priorityEmoji} **${task.id}**: ${task.description}\n`;
+                if (task.tags.length > 0) {
+                  responseText += `   🏷️ Tags: ${task.tags.join(', ')}\n`;
+                }
+                responseText += '\n';
+              });
+            }
+          }
+        }
+        break;
+
+      case 'sync':
+        if (isAuthorized) {
+          const syncResult = await this.claude.syncWithLocalMemory();
+          const storageSync = await this.storage.syncWithMasterMemory();
+          
+          responseText = `🔄 **Data Sync Results**\n\n`;
+          responseText += `📡 **Claude Memory Sync:**\n`;
+          responseText += syncResult.success ? 
+            `✅ Synced ${syncResult.synced} operations` : 
+            `❌ Failed: ${syncResult.error}`;
+          
+          responseText += `\n\n💾 **Storage Sync:**\n`;
+          responseText += storageSync.success ? 
+            `✅ Synced ${storageSync.synced.tasks} tasks, ${storageSync.synced.messages} messages` : 
+            `❌ Failed: ${storageSync.error}`;
+          
+          responseText += `\n\n🕐 Last sync: ${new Date().toLocaleString()}`;
+        }
+        break;
+
+      case 'export':
+        if (isAuthorized) {
+          const exportData = await this.storage.exportData();
+          responseText = `📤 **Data Export**\n\n📊 **Statistics:**\n• Tasks: ${exportData.stats.totalTasks} (${exportData.stats.pendingTasks} pending)\n• Messages: ${exportData.stats.totalMessages}\n• Completion Rate: ${exportData.stats.completionRate}%\n• Storage: ${exportData.stats.storageType}\n\n📁 **Export includes:**\n• All tasks with metadata\n• Last 100 messages\n• Usage statistics\n• System information\n\n💾 Data exported at: ${exportData.exportedAt}`;
+        }
+        break;
         
       default:
         responseText = isAuthorized ? 
@@ -428,7 +556,7 @@ Contact @${this.config.telegram.authorizedUsername} for access to additional fea
     // Handle general conversation for authorized user
     if (this.isAuthorized(message)) {
       // Save the message as context
-      const result = this.saveMessage(text, `Personal Chat (@${username})`, ['chat', 'personal']);
+      const result = await this.saveMessage(text, `Personal Chat (@${username})`, ['chat', 'personal']);
       
       // Generate intelligent response
       const actionItems = result.message.actionItems;
