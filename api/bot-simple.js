@@ -130,6 +130,12 @@ async function handleCommand(message) {
         }
       }
       break;
+
+    case 'groupid':
+      if (authorized) {
+        response = `🆔 **Chat Information**\n\n📋 **Details:**\n• Chat ID: \`${chatId}\`\n• Chat Type: ${message.chat.type}\n• Chat Title: ${message.chat.title || 'N/A'}\n\n💡 **Usage:**\nThis chat ID can be used to set up group notifications and topic channels.\n\nFor groups: Save this ID as JINBOT_HQ_GROUP_ID`;
+      }
+      break;
       
     default:
       response = authorized ? 
