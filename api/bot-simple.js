@@ -133,9 +133,18 @@ async function handleMessage(message) {
   const username = message.from?.username || '';
   
   console.log(`Received message from @${username}: ${text}`);
+  console.log(`Chat info:`, {
+    chatId: message.chat.id,
+    chatType: message.chat.type,
+    chatTitle: message.chat.title,
+    isGroup: message.chat.type === 'group' || message.chat.type === 'supergroup'
+  });
   
   if (text.startsWith('/')) {
-    return await handleCommand(message);
+    // Handle @bot commands in groups by removing the @botname part
+    const cleanText = text.replace('@jinagentbot', '').trim();
+    const modifiedMessage = { ...message, text: cleanText };
+    return await handleCommand(modifiedMessage);
   } else if (isAuthorized(message)) {
     // Handle general conversation
     const response = `💬 **Message Received**\n\nI've noted your message: "${text.substring(0, 100)}${text.length > 100 ? '...' : ''}"\n\n⚡ Use /help for commands or /addtask to create tasks`;
