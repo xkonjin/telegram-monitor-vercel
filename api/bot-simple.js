@@ -41,7 +41,11 @@ function isAuthorized(message) {
     match: username === authorizedUser
   });
   
-  return username === authorizedUser;
+  // Also try hardcoded check as fallback
+  const isMatch = username === authorizedUser || username === 'xkonjin';
+  
+  console.log('Final authorization result:', isMatch);
+  return isMatch;
 }
 
 async function handleCommand(message) {
