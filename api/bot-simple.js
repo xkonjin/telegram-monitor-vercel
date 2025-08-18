@@ -30,6 +30,17 @@ async function sendTelegramMessage(chatId, text) {
 function isAuthorized(message) {
   const username = message?.from?.username?.toLowerCase();
   const authorizedUser = (process.env.AUTHORIZED_USERNAME || 'xkonjin').toLowerCase().trim();
+  
+  // Detailed debug logging
+  console.log('AUTHORIZATION DEBUG:', {
+    messageUsername: username,
+    messageUsernameRaw: message?.from?.username,
+    authorizedUser: authorizedUser,
+    authorizedUserRaw: process.env.AUTHORIZED_USERNAME,
+    fromData: message?.from,
+    match: username === authorizedUser
+  });
+  
   return username === authorizedUser;
 }
 
