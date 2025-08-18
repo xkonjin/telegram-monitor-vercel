@@ -29,23 +29,29 @@ async function sendTelegramMessage(chatId, text) {
 
 function isAuthorized(message) {
   const username = message?.from?.username?.toLowerCase();
-  const authorizedUser = (process.env.AUTHORIZED_USERNAME || 'xkonjin').toLowerCase().trim();
+  
+  // Multiple ways to check authorization
+  const validUsernames = ['xkonjin', 'Xkonjin'];
+  const validChatId = '325698032';
+  
+  const isValidUsername = validUsernames.some(u => u.toLowerCase() === username);
+  const isValidChatId = message?.from?.id?.toString() === validChatId;
   
   // Detailed debug logging
   console.log('AUTHORIZATION DEBUG:', {
     messageUsername: username,
     messageUsernameRaw: message?.from?.username,
-    authorizedUser: authorizedUser,
-    authorizedUserRaw: process.env.AUTHORIZED_USERNAME,
-    fromData: message?.from,
-    match: username === authorizedUser
+    userId: message?.from?.id,
+    chatId: message?.chat?.id,
+    isValidUsername,
+    isValidChatId,
+    fromData: message?.from
   });
   
-  // Also try hardcoded check as fallback
-  const isMatch = username === authorizedUser || username === 'xkonjin';
+  const isAuthorized = isValidUsername || isValidChatId;
+  console.log('Final authorization result:', isAuthorized);
   
-  console.log('Final authorization result:', isMatch);
-  return isMatch;
+  return isAuthorized;
 }
 
 async function handleCommand(message) {
